@@ -1,5 +1,6 @@
 import pygame
 from constants import *
+from player import Player
 
 def main():
     # Init the game
@@ -11,15 +12,23 @@ def main():
     # Delta time
     dt = 0
 
+    # Create a player and spawn in middle of the screen.
+    player = Player(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2)
+
     # Start the gameloop
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return
         # Fill screen with black
-        screen.fill(BACKGROUND_COLOR)
+        screen.fill(SCREEN_COLOR)
+
+        # Draw player on screen
+        player.draw(screen)
+
         # Update the screen
         pygame.display.flip()
+
         # Update delta time by seconds 
         dt = clock.tick(60) / 1000
 
