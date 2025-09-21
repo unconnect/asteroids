@@ -24,6 +24,7 @@ def main():
         screen.fill(SCREEN_COLOR)
 
         # Draw player on screen
+        player.update(dt)
         player.draw(screen)
 
         # Update the screen
