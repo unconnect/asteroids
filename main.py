@@ -12,8 +12,17 @@ def main():
     # Delta time
     dt = 0
 
+    # Groups
+    updatables = pygame.sprite.Group()
+    drawables = pygame.sprite.Group()
+
+    Player.containers = (updatables, drawables)
+ 
     # Create a player and spawn in middle of the screen.
     player = Player(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2)
+
+    updatables.add(player)
+    drawables.add(player)
 
     # Start the gameloop
     while True:
@@ -23,9 +32,11 @@ def main():
         # Fill screen with black
         screen.fill(SCREEN_COLOR)
 
-        # Draw player on screen
-        player.update(dt)
-        player.draw(screen)
+        # Update all instaces
+        updatables.update(dt)
+        # Draw all instances
+        for drawable in drawables:
+            drawable.draw(screen)
 
         # Update the screen
         pygame.display.flip()
