@@ -1,6 +1,7 @@
 import pygame
 from constants import *
 from player import Player
+from asteroids import Asteroids
 
 def main():
     # Init the game
@@ -15,14 +16,16 @@ def main():
     # Groups
     updatables = pygame.sprite.Group()
     drawables = pygame.sprite.Group()
+    asteroids = pygame.sprite.Group()
 
+    # 
     Player.containers = (updatables, drawables)
+    Asteroids.containers = (asteroids, updatables, drawables)
  
     # Create a player and spawn in middle of the screen.
     player = Player(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2)
 
-    updatables.add(player)
-    drawables.add(player)
+
 
     # Start the gameloop
     while True:
