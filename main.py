@@ -1,4 +1,5 @@
 import pygame
+import sys
 from constants import *
 from player import Player
 from asteroid import Asteroid
@@ -39,6 +40,13 @@ def main():
 
         # Update all instaces
         updatable.update(dt)
+
+        # Check for asteroid collision with player
+        for asteroid in asteroids:
+            if asteroid.collision(player):
+                print("Game over!")
+                sys.exit()
+
         # Draw all instances
         for drawable_instace in drawable:
             drawable_instace.draw(screen)
