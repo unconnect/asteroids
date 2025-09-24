@@ -1,7 +1,8 @@
 import pygame
 from constants import *
 from player import Player
-from asteroids import Asteroids
+from asteroid import Asteroid
+from asteroidfield import AsteroidField
 
 def main():
     # Init the game
@@ -14,17 +15,18 @@ def main():
     dt = 0
 
     # Groups
-    updatables = pygame.sprite.Group()
-    drawables = pygame.sprite.Group()
+    updatable = pygame.sprite.Group()
+    drawable = pygame.sprite.Group()
     asteroids = pygame.sprite.Group()
 
     # 
-    Player.containers = (updatables, drawables)
-    Asteroids.containers = (asteroids, updatables, drawables)
+    Player.containers = (updatable, drawable)
+    Asteroid.containers = (asteroids, updatable, drawable)
+    AsteroidField.containers = (updatable)
  
     # Create a player and spawn in middle of the screen.
     player = Player(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2)
-
+    asteroidfield = AsteroidField()
 
 
     # Start the gameloop
@@ -36,10 +38,10 @@ def main():
         screen.fill(SCREEN_COLOR)
 
         # Update all instaces
-        updatables.update(dt)
+        updatable.update(dt)
         # Draw all instances
-        for drawable in drawables:
-            drawable.draw(screen)
+        for drawable_instace in drawable:
+            drawable_instace.draw(screen)
 
         # Update the screen
         pygame.display.flip()
