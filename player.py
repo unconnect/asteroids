@@ -10,6 +10,7 @@ class Player(CircleShape):
       radius=PLAYER_RADIUS
       )
     self.rotation = 0
+    self.cooldown_timer = 0
 
   # Define a triangle
   def triangle(self):
@@ -46,8 +47,11 @@ class Player(CircleShape):
      self.position += forward * PLAYER_SPEED * dt
   
   def shoot(self):
-    shot = Shot(self.position.x, self.position.y)
-    # Create and rotate it's velocity vector in the players direction
-    shot.velocity = pygame.Vector2(0, 1).rotate(self.rotation)
-    # Scale up the velocity vector to move fast
-    shot.velocity *= PLAYER_SHOT_SPEED
+    if self.cooldown_timer <= 0:
+      shot = Shot(self.position.x, self.position.y)
+      # Create and rotate it's velocity vector in the players direction
+      shot.velocity = pygame.Vector2(0, 1).rotate(self.rotation)
+      # Scale up the velocity vector to move fast
+      shot.velocity *= PLAYER_SHOT_SPEED
+      # Set shot cooldown timer
+      self.cooldown_timer = PLAYER_SHOOT_COOLDOWN

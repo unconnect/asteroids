@@ -54,6 +54,9 @@ def main():
         for drawable_instace in drawable:
             drawable_instace.draw(screen)
 
+        # Decrease players cooldown timer
+        player.cooldown_timer -= dt
+
         # Update the screen
         pygame.display.flip()
 
