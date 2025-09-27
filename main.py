@@ -52,7 +52,7 @@ def main():
             # Check if asteroid was hit by a shot
             for shot in shots:
                 if shot.collision(asteroid):
-                    asteroid.kill()
+                    asteroid.split()
                     shot.kill()
 
         # Draw all instances
