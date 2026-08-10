@@ -16,7 +16,7 @@ class Phase(Enum):
 
 
 class GameState:
-    """Score, lives and difficulty. Deliberately free of any rendering API.
+    """Score, lives and difficulty. Deliberately free of pygame.
 
     Keeping the rules separate from rendering is what lets them be tested
     without a display, and keeps the game loop readable.
