@@ -10,8 +10,6 @@ from constants import (
 )
 from player import Player
 
-pygame.init()
-
 
 def make_player(x=SCREEN_WIDTH / 2, y=SCREEN_HEIGHT / 2):
     group = pygame.sprite.Group()
@@ -46,6 +44,13 @@ def test_blinks_while_invulnerable():
         player.invuln_timer = PLAYER_INVULN_TIME - step / (PLAYER_BLINK_HZ * 2)
         seen.add(player.is_visible())
     assert seen == {True, False}
+
+    # The set check above catches a stuck blink but not an inverted one:
+    # flipping the parity would leave {True, False} unchanged. Pin actual
+    # values against the spec formula.
+    for t in (2.0, 1.95, 1.9, 1.85):
+        player.invuln_timer = t
+        assert player.is_visible() is (int(t * PLAYER_BLINK_HZ) % 2 == 0)
 
 
 def test_respawn_recentres_and_grants_grace():
