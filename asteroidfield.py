@@ -28,8 +28,9 @@ class AsteroidField(pygame.sprite.Sprite):
         ],
     ]
 
-    def __init__(self):
+    def __init__(self, state):
         pygame.sprite.Sprite.__init__(self, self.containers)
+        self.state = state
         self.spawn_timer = 0.0
 
     def spawn(self, radius, position, velocity):
@@ -38,7 +39,8 @@ class AsteroidField(pygame.sprite.Sprite):
 
     def update(self, dt):
         self.spawn_timer += dt
-        if self.spawn_timer > ASTEROID_SPAWN_RATE:
+        # Interval shortens as the score climbs — this is the difficulty ramp.
+        if self.spawn_timer > self.state.spawn_interval:
             self.spawn_timer = 0
 
             # spawn a new asteroid at a random edge
