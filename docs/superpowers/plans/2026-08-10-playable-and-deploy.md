@@ -82,7 +82,28 @@ import os
 # work in CI with no display or sound device.
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
+
+import pygame
+import pytest
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _pygame_session():
+    """Init pygame once per test session.
+
+    Player.update() calls pygame.key.get_pressed(), which needs the video
+    subsystem. Keeping this beside the dummy SDL env vars means every test
+    file works standalone, rather than only when collected alongside another
+    file that happened to init pygame first.
+    """
+    pygame.init()
+    yield
+    pygame.quit()
 ```
+
+The `import pygame` must stay **below** the `os.environ.setdefault` calls. Above
+them, the dummy driver would not be in effect when pygame initialises its video
+subsystem, and CI would try to open a real display.
 
 - [ ] **Step 4: Sync the environment**
 
@@ -810,6 +831,13 @@ def test_blinks_while_invulnerable():
         seen.add(player.is_visible())
     assert seen == {True, False}
 
+    # The set check above catches a stuck blink but not an inverted one:
+    # flipping the parity leaves {True, False} unchanged. Pin actual values
+    # against the spec formula. These four t values cover both parities.
+    for t in (2.0, 1.95, 1.9, 1.85):
+        player.invuln_timer = t
+        assert player.is_visible() is (int(t * PLAYER_BLINK_HZ) % 2 == 0)
+
 
 def test_respawn_recentres_and_grants_grace():
     player = make_player(10, 10)
@@ -936,7 +964,7 @@ class Player(CircleShape):
             self.cooldown_timer = PLAYER_SHOOT_COOLDOWN
 ```
 
-Note `pygame.key.get_pressed()` requires video init. `conftest.py` sets the dummy driver, but `Player.update()` in tests still needs pygame initialised — add `pygame.init()` to the top of `tests/test_player.py` if `update()` raises `pygame.error`.
+Note `pygame.key.get_pressed()` requires video init. The session-scoped autouse fixture in `conftest.py` (Task 1) covers this for every test file — do **not** add a bare `pygame.init()` to `tests/test_player.py`. A module-level init there is a process-global side effect with no teardown, and it leaves the other test files passing only when collected in the same run as this one.
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
