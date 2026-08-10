@@ -8,3 +8,7 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Agent scratch: worktrees and execution ledgers
+.claude/worktrees/
+.superpowers/
