@@ -460,11 +460,26 @@ def test_spawn_interval_decreases_monotonically():
 
 def test_gamestate_does_not_pull_in_a_display():
     # gamestate must stay rendering-free so the rules test headless.
+    # Walk the imports rather than scanning the source text: a substring
+    # check also matches docstrings and comments, so a module explaining
+    # why it avoids pygame would fail its own test.
+    import ast
     import inspect
 
     import gamestate
 
-    assert "pygame" not in inspect.getsource(gamestate)
+    tree = ast.parse(inspect.getsource(gamestate))
+    imported_roots = {
+        alias.name.split(".")[0]
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    } | {
+        node.module.split(".")[0]
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module
+    }
+    assert "pygame" not in imported_roots
 ```
 
 - [ ] **Step 3: Run the tests to verify they fail**
