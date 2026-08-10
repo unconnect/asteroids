@@ -11,3 +11,5 @@ class Shot(CircleShape):
 
   def update(self, dt):
     self.position += self.velocity * dt
+    if self.is_off_screen(SHOT_RADIUS):
+      self.kill()

@@ -13,6 +13,10 @@ class Asteroid(CircleShape):
 
   def update(self, dt):
     self.position += self.velocity * dt
+    # Asteroids do not wrap: the field spawns continuously, so wrapping
+    # would saturate the screen. They leave and are reclaimed instead.
+    if self.is_off_screen(ASTEROID_CULL_MARGIN):
+      self.kill()
 
   def split(self):
     # Remove this asteroid from game
