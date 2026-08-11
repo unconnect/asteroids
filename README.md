@@ -128,18 +128,23 @@ web build, not an oversight — it's documented here rather than worked around.
 
 ## Deployment
 
-Releases are cut by pushing a tag matching `v*`:
+Releases are cut by **publishing a GitHub Release** — from the Releases page,
+or:
 
 ```bash
-git tag v1.0.0
-git push --tags
+gh release create v1.0.0 --title "v1.0.0" --notes "What changed"
 ```
 
-This triggers `.github/workflows/release.yml`, which:
+Creating the release creates its tag, so there is no separate `git tag` step.
+A release left as a **draft** triggers nothing; the pipeline starts the moment
+you publish, which means you can write the notes at your own pace.
+
+Publishing triggers `.github/workflows/release.yml`, which:
 
 1. Runs the test suite.
 2. Builds desktop binaries for Linux, Windows, and macOS with PyInstaller and
-   attaches them to a GitHub Release.
+   attaches them to the release you just published. Your release notes are
+   never touched — the workflow only uploads assets.
 3. Builds the web bundle (`scripts/build_web.sh`) and packages it into an
    `nginx:alpine`-based image, published to
    `ghcr.io/unconnect/asteroids:latest` (arm64, for the Raspberry Pi target).
@@ -148,21 +153,19 @@ This triggers `.github/workflows/release.yml`, which:
 
 The same workflow also runs on every push to `main` and every pull request,
 but only the test suite — the binary/image-building jobs (and the release
-and redeploy steps) stay gated to an actual `v*` tag (or a manual
+and redeploy steps) stay gated to a published release (or a manual
 `workflow_dispatch` run, see below), so a PR never builds binaries, builds
 or pushes an image, or touches GHCR.
 
 The workflow also supports manual `workflow_dispatch` runs, useful for
 dry-running most of the pipeline (tests, binary builds, image build/push)
-without tagging. Two steps stay tag-only even on a dispatch run: creating
-the GitHub Release itself (`softprops/action-gh-release` needs a real tag to
-name the release after — a branch ref has none, so that job doesn't run on
-dispatch at all) and moving the `latest` image tag that
-`deploy/docker-compose.yml` pins, which is what the Pi actually redeploys
-from. The Portainer webhook step is likewise skipped on `workflow_dispatch`
-— only an actual tag push can move `latest` or trigger a production
-redeploy, so a manual "Run workflow" click, from any branch, can never
-accidentally redeploy the live site.
+without publishing anything. Three things stay release-only even on a
+dispatch run: attaching binaries (there is no release to attach them to, so
+that job doesn't run at all), moving the `latest` image tag that
+`deploy/docker-compose.yml` pins, and the Portainer webhook. A dispatch run
+still builds and pushes the image under a `sha-…` tag, so it genuinely
+validates the build — it just cannot move `latest` or redeploy. A manual
+"Run workflow" click, from any branch, can never touch the live site.
 
 ### `deploy/`
 

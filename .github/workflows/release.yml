@@ -1,18 +1,28 @@
 name: Release
 
 on:
+  # Publishing a GitHub Release is the deliberate act that ships a version:
+  # it builds the binaries, attaches them to that release, pushes the image
+  # to GHCR, and redeploys the Pi. `published` fires for both normal and
+  # pre-releases, and does NOT fire while a release is still a draft -- so
+  # you can prepare notes at your leisure and nothing happens until you hit
+  # Publish.
+  release:
+    types: [published]
   push:
-    tags: ['v*']
     branches: [main]
   pull_request:
   workflow_dispatch:
 
 # Minimal default: just enough for actions/checkout. Jobs that need more
-# (release: creating a GitHub Release; docker: pushing to GHCR) grant it to
-# themselves below, scoped to only those jobs. This matters more now that
-# pull_request can trigger this workflow, including from forks.
+# (release: uploading assets to the GitHub Release; docker: pushing to GHCR)
+# grant it to themselves below, scoped to only those jobs. This matters more
+# now that pull_request can trigger this workflow, including from forks.
 permissions:
   contents: read
+
+env:
+  IMAGE: ghcr.io/unconnect/asteroids
 
 jobs:
   test:
@@ -34,22 +44,28 @@ jobs:
           SDL_VIDEODRIVER: dummy
           SDL_AUDIODRIVER: dummy
 
-  # desktop/web/docker/release stay effectively tag-only: they run on an
-  # actual version tag, or on workflow_dispatch (which exists specifically
-  # to dry-run the pipeline -- see README). They do NOT run on plain pushes
-  # to main or on pull_request, so PRs only ever pay for the `test` job.
+  # desktop/web/docker/release stay effectively release-only: they run when a
+  # GitHub Release is published, or on workflow_dispatch (which exists
+  # specifically to dry-run the pipeline -- see README). They do NOT run on
+  # plain pushes to main or on pull_request, so PRs only ever pay for `test`.
+  #
+  # The gate is `github.event_name == 'release'` rather than a check on the
+  # ref. On a release event GITHUB_REF is the release's tag, so a ref check
+  # would also work -- but only if every tag happens to match the pattern.
+  # Keying on the event itself says what we actually mean and cannot drift
+  # if a tag is ever named differently.
   #
   # Each of these four jobs' `if:` starts with `success()`. That is not
   # decorative: a job-level `if:` REPLACES GitHub's default "all `needs`
   # jobs succeeded" check rather than ANDing with it, so without an explicit
   # success() here, a failed `test` (or `web`, for `docker`; or `desktop`,
-  # for `release`) would NOT stop these jobs from running on a tag push or
-  # dispatch -- only the tag/dispatch part of the expression would gate
+  # for `release`) would NOT stop these jobs from running on a release or
+  # dispatch -- only the release/dispatch part of the expression would gate
   # them. success() restores the normal "don't run after an upstream
-  # failure" behaviour on top of the tag/dispatch gate.
+  # failure" behaviour on top of that gate.
   desktop:
     needs: test
-    if: success() && (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v'))
+    if: success() && (github.event_name == 'workflow_dispatch' || github.event_name == 'release')
     strategy:
       fail-fast: false
       matrix:
@@ -98,17 +114,14 @@ jobs:
 
   release:
     needs: desktop
-    # Only create a GitHub Release from an actual version tag.
-    # softprops/action-gh-release derives its tag from GITHUB_REF; on a
-    # workflow_dispatch run (a branch ref, no tag) it has nothing to derive
-    # and aborts with "GitHub Releases requires a tag". Gating the whole job
-    # on the tag ref -- rather than letting it run and fail -- means a
-    # workflow_dispatch dry run still exercises test -> desktop (and
-    # separately web -> docker) without a guaranteed-red job at the end.
-    # success() (see the note above `desktop`) makes sure a failed `desktop`
-    # leg still stops `release` on a real tag push, same as plain `needs`
-    # would without a custom `if:`.
-    if: success() && startsWith(github.ref, 'refs/tags/v')
+    # Only attach binaries to an actual published Release. On
+    # workflow_dispatch there is no release to attach them to, so this job is
+    # skipped entirely rather than left to fail -- a dispatch dry run still
+    # exercises test -> desktop (and separately web -> docker) and just stops
+    # short of publishing anything. success() (see the note above `desktop`)
+    # makes sure a failed `desktop` leg still stops `release` on a real
+    # release, same as plain `needs` would without a custom `if:`.
+    if: success() && github.event_name == 'release'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -118,14 +131,24 @@ jobs:
           path: artifacts
           pattern: asteroids-*
           merge-multiple: true
-      - uses: softprops/action-gh-release@v2
-        with:
-          files: artifacts/*
-          generate_release_notes: true
+
+      # Upload to the release that already exists, rather than creating one.
+      # This is deliberately `gh release upload` and not an action that
+      # creates-or-updates a release: you wrote the release notes by hand
+      # when you published it, and anything that regenerates them would
+      # overwrite your text. This only ever adds assets.
+      #
+      # --clobber makes a re-run idempotent: if you re-run this workflow on
+      # the same release (say one matrix leg failed and you fixed it), the
+      # existing assets are replaced instead of erroring on a name clash.
+      - name: Attach binaries to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" artifacts/* --clobber --repo "${{ github.repository }}"
 
   web:
     needs: test
-    if: success() && (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v'))
+    if: success() && (github.event_name == 'workflow_dispatch' || github.event_name == 'release')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -146,13 +169,13 @@ jobs:
     # Explicit, not just inherited from `needs`: a skipped `web` already
     # skips `docker` by default (a job depending on a skipped job is itself
     # skipped unless its own `if` says otherwise), but stating the same
-    # condition here keeps the tag-or-dispatch gate obvious without relying
-    # on that implicit behaviour, and keeps this job in lockstep with `web`
-    # so `download-artifact` below never runs against a run where `web`
+    # condition here keeps the release-or-dispatch gate obvious without
+    # relying on that implicit behaviour, and keeps this job in lockstep with
+    # `web` so `download-artifact` below never runs against a run where `web`
     # didn't produce anything. success() (see the note above `desktop`) also
     # makes sure a failed `web` still stops `docker`, since our own `if:`
     # would otherwise override that default protection.
-    if: success() && (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v'))
+    if: success() && (github.event_name == 'workflow_dispatch' || github.event_name == 'release')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -174,28 +197,30 @@ jobs:
 
       # Same safety property as the "Trigger Portainer redeploy" step below:
       # deploy/docker-compose.yml pins the `latest` tag, so moving it must
-      # require a deliberate release, not just any trigger that reaches this
-      # job. `enable` gates `type=raw,value=latest` on an actual version-tag
-      # ref, so a workflow_dispatch dry run (from any branch) never
-      # repoints `latest` at unreleased code.
+      # require a deliberate published Release, not just any trigger that
+      # reaches this job. `enable` gates `latest` on the release event, so a
+      # workflow_dispatch dry run (from any branch) never repoints `latest`
+      # at unreleased code.
       #
-      # `type=ref,event=tag` only matches on a real tag push -- on
-      # workflow_dispatch (a branch ref) it contributes nothing. With
-      # `latest` now also disabled on non-tag refs, a dispatch run would be
-      # left with zero tags and nothing to push, which would fail the job
-      # and defeat the point of dry-running the build. `type=sha` fixes
-      # that: it matches unconditionally (branch or tag), so every trigger
-      # that reaches this job always has at least one concrete, non-latest
-      # tag to build and push, which is what actually "validates the image
-      # build" on a dispatch.
+      # The version tag is taken from the release payload explicitly rather
+      # than via `type=ref,event=tag`: that rule keys off a tag *push* event,
+      # and we no longer trigger on tag pushes at all. Reading
+      # github.event.release.tag_name is unambiguous about where the version
+      # comes from.
+      #
+      # `type=sha` matches unconditionally (branch or release), so every
+      # trigger that reaches this job always has at least one concrete,
+      # non-latest tag to build and push -- which is what actually
+      # "validates the image build" on a dispatch, where both of the other
+      # two rules are disabled.
       - uses: docker/metadata-action@v5
         id: meta
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ${{ env.IMAGE }}
           tags: |
-            type=ref,event=tag
+            type=raw,value=${{ github.event.release.tag_name }},enable=${{ github.event_name == 'release' }}
             type=sha
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=latest,enable=${{ github.event_name == 'release' }}
 
       - uses: docker/build-push-action@v6
         with:
@@ -206,13 +231,16 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
 
-      # Only redeploy the Pi on a real release. workflow_dispatch exists so
-      # the whole pipeline (test -> web -> docker build/push) can be dry-run
-      # before tagging, but a manual "Run workflow" click must never be able
-      # to force a production redeploy on someone's Raspberry Pi. Gating on
-      # the tag ref means: dry runs still validate that the image builds and
-      # pushes to GHCR, they just don't flip the Pi over to it. Only an
-      # actual `git push --tags` (a deliberate release) triggers the webhook.
+      # Only redeploy the Pi on a real published Release. workflow_dispatch
+      # exists so the whole pipeline (test -> web -> docker build/push) can
+      # be dry-run beforehand, but a manual "Run workflow" click must never
+      # be able to force a production redeploy on someone's Raspberry Pi.
+      # Gating on the release event means: dry runs still validate that the
+      # image builds and pushes to GHCR, they just don't flip the Pi over to
+      # it. Only publishing a Release triggers the webhook.
+      # Timeouts match the trackfoundry stack's deploy workflow: without
+      # them a hung Portainer endpoint would keep this job alive until
+      # GitHub's 6-hour limit instead of failing in half a minute.
       - name: Trigger Portainer redeploy
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: curl -fsS -X POST "${{ secrets.PORTAINER_WEBHOOK_URL }}"
+        if: github.event_name == 'release'
+        run: curl -fsSL --connect-timeout 10 --max-time 30 -X POST "${{ secrets.PORTAINER_WEBHOOK_URL }}"
