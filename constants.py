@@ -6,6 +6,7 @@ COLOR_BLACK = (0, 0, 0)
 SCREEN_WIDTH = 1280
 SCREEN_HEIGHT = 720
 SCREEN_COLOR = COLOR_BLACK
+MAX_FRAME_TIME = 0.05  # seconds; guards against browser tab-refocus jumps
 
 # Asteroid
 ASTEROID_MIN_RADIUS = 20
