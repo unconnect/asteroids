@@ -32,7 +32,7 @@ requires-dist = [{ name = "pygame", specifier = "==2.6.1" }]
 [package.metadata.requires-dev]
 dev = [
     { name = "pygbag", specifier = ">=0.9.2" },
-    { name = "pyinstaller", specifier = ">=6.10" },
+    { name = "pyinstaller", specifier = ">=6.10,<7" },
     { name = "pytest", specifier = ">=8.0" },
 ]
 
