@@ -1,0 +1,148 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.12
+      - run: uv sync --all-groups
+      - run: uv run pytest -v
+        env:
+          SDL_VIDEODRIVER: dummy
+          SDL_AUDIODRIVER: dummy
+
+  desktop:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: asteroids-linux
+          - os: windows-latest
+            artifact: asteroids-windows
+          - os: macos-latest
+            artifact: asteroids-macos
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv python install 3.12
+      - run: uv sync --all-groups
+
+      - name: Build binary (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          uv run pyinstaller --onefile --name asteroids main.py
+          mv dist/asteroids dist/asteroids-linux
+
+      - name: Build binary (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          uv run pyinstaller --onefile --windowed --name asteroids main.py
+          mv dist/asteroids.exe dist/asteroids-windows.exe
+
+      - name: Build binary (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          uv run pyinstaller --onefile --windowed --name Asteroids main.py
+          hdiutil create -volname Asteroids -srcfolder dist/Asteroids.app \
+            -ov -format UDZO dist/asteroids-macos.dmg
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            dist/asteroids-linux
+            dist/asteroids-windows.exe
+            dist/asteroids-macos.dmg
+          if-no-files-found: ignore
+
+  release:
+    needs: desktop
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: asteroids-*
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+          generate_release_notes: true
+
+  web:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.12
+      - run: uv sync --all-groups
+      - run: scripts/build_web.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: build/web
+
+  docker:
+    needs: web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: web
+          path: build/web
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      # Only redeploy the Pi on a real release. workflow_dispatch exists so
+      # the whole pipeline (test -> web -> docker build/push) can be dry-run
+      # before tagging, but a manual "Run workflow" click must never be able
+      # to force a production redeploy on someone's Raspberry Pi. Gating on
+      # the tag ref means: dry runs still validate that the image builds and
+      # pushes to GHCR, they just don't flip the Pi over to it. Only an
+      # actual `git push --tags` (a deliberate release) triggers the webhook.
+      - name: Trigger Portainer redeploy
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: curl -fsS -X POST "${{ secrets.PORTAINER_WEBHOOK_URL }}"
