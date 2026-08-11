@@ -10,9 +10,4 @@ FROM nginx:alpine
 COPY build/web /usr/share/nginx/html
 COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
 
-# proxy_cache_path (docker/nginx.conf) requires this directory to already
-# exist and be writable by the user nginx's worker processes run as; nginx
-# does not create cache directories itself.
-RUN mkdir -p /var/cache/nginx/cdn && chown -R nginx:nginx /var/cache/nginx/cdn
-
 EXPOSE 80
