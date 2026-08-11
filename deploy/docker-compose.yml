@@ -1,0 +1,11 @@
+services:
+  asteroids:
+    image: ghcr.io/unconnect/asteroids:latest
+    container_name: asteroids
+    restart: unless-stopped
+    networks:
+      - swag_default
+
+networks:
+  swag_default:
+    external: true
