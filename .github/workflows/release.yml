@@ -3,14 +3,24 @@ name: Release
 on:
   push:
     tags: ['v*']
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 
+# Minimal default: just enough for actions/checkout. Jobs that need more
+# (release: creating a GitHub Release; docker: pushing to GHCR) grant it to
+# themselves below, scoped to only those jobs. This matters more now that
+# pull_request can trigger this workflow, including from forks.
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 jobs:
   test:
+    # Runs on every trigger, including pull_request from forks. It only
+    # checks out the ref GitHub resolves for the event and runs the local
+    # test suite with no secrets in scope (no permissions beyond the
+    # top-level `contents: read`) -- there's nothing here for untrusted PR
+    # code to exfiltrate or abuse.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,8 +34,22 @@ jobs:
           SDL_VIDEODRIVER: dummy
           SDL_AUDIODRIVER: dummy
 
+  # desktop/web/docker/release stay effectively tag-only: they run on an
+  # actual version tag, or on workflow_dispatch (which exists specifically
+  # to dry-run the pipeline -- see README). They do NOT run on plain pushes
+  # to main or on pull_request, so PRs only ever pay for the `test` job.
+  #
+  # Each of these four jobs' `if:` starts with `success()`. That is not
+  # decorative: a job-level `if:` REPLACES GitHub's default "all `needs`
+  # jobs succeeded" check rather than ANDing with it, so without an explicit
+  # success() here, a failed `test` (or `web`, for `docker`; or `desktop`,
+  # for `release`) would NOT stop these jobs from running on a tag push or
+  # dispatch -- only the tag/dispatch part of the expression would gate
+  # them. success() restores the normal "don't run after an upstream
+  # failure" behaviour on top of the tag/dispatch gate.
   desktop:
     needs: test
+    if: success() && (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v'))
     strategy:
       fail-fast: false
       matrix:
@@ -74,7 +98,20 @@ jobs:
 
   release:
     needs: desktop
+    # Only create a GitHub Release from an actual version tag.
+    # softprops/action-gh-release derives its tag from GITHUB_REF; on a
+    # workflow_dispatch run (a branch ref, no tag) it has nothing to derive
+    # and aborts with "GitHub Releases requires a tag". Gating the whole job
+    # on the tag ref -- rather than letting it run and fail -- means a
+    # workflow_dispatch dry run still exercises test -> desktop (and
+    # separately web -> docker) without a guaranteed-red job at the end.
+    # success() (see the note above `desktop`) makes sure a failed `desktop`
+    # leg still stops `release` on a real tag push, same as plain `needs`
+    # would without a custom `if:`.
+    if: success() && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -88,6 +125,7 @@ jobs:
 
   web:
     needs: test
+    if: success() && (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -101,10 +139,24 @@ jobs:
         with:
           name: web
           path: build/web
+          if-no-files-found: error
 
   docker:
     needs: web
+    # Explicit, not just inherited from `needs`: a skipped `web` already
+    # skips `docker` by default (a job depending on a skipped job is itself
+    # skipped unless its own `if` says otherwise), but stating the same
+    # condition here keeps the tag-or-dispatch gate obvious without relying
+    # on that implicit behaviour, and keeps this job in lockstep with `web`
+    # so `download-artifact` below never runs against a run where `web`
+    # didn't produce anything. success() (see the note above `desktop`) also
+    # makes sure a failed `web` still stops `docker`, since our own `if:`
+    # would otherwise override that default protection.
+    if: success() && (github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -120,13 +172,30 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Same safety property as the "Trigger Portainer redeploy" step below:
+      # deploy/docker-compose.yml pins the `latest` tag, so moving it must
+      # require a deliberate release, not just any trigger that reaches this
+      # job. `enable` gates `type=raw,value=latest` on an actual version-tag
+      # ref, so a workflow_dispatch dry run (from any branch) never
+      # repoints `latest` at unreleased code.
+      #
+      # `type=ref,event=tag` only matches on a real tag push -- on
+      # workflow_dispatch (a branch ref) it contributes nothing. With
+      # `latest` now also disabled on non-tag refs, a dispatch run would be
+      # left with zero tags and nothing to push, which would fail the job
+      # and defeat the point of dry-running the build. `type=sha` fixes
+      # that: it matches unconditionally (branch or tag), so every trigger
+      # that reaches this job always has at least one concrete, non-latest
+      # tag to build and push, which is what actually "validates the image
+      # build" on a dispatch.
       - uses: docker/metadata-action@v5
         id: meta
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=ref,event=tag
-            type=raw,value=latest
+            type=sha
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
 
       - uses: docker/build-push-action@v6
         with:

@@ -15,10 +15,13 @@
 # pygame-web.github.io regardless of what `--cdn` says. Those two fetches
 # happen from inside the running interpreter, not from anything present in
 # build/web/ on disk, so no static scan of the built files could have caught
-# them. Self-hosting pygbag 0.9.3's runtime is not achievable without
-# reverse-engineering and repackaging its Python-level package resolution,
-# which is out of scope. See task-9-report.md ("Fix round 2") for the full
-# story, including the exact browser console output that proved it.
+# them. The wheel URL in particular resolves to pygbag's hardcoded
+# dev-server default, "http://localhost:8000/cdn/...", regardless of what
+# --cdn was set to; in a real deployment with nothing listening on :8000,
+# the browser console shows net::ERR_CONNECTION_REFUSED for that request and
+# the game never finishes loading pygame_ce. Self-hosting pygbag 0.9.3's
+# runtime is not achievable without reverse-engineering and repackaging its
+# Python-level package resolution, which is out of scope.
 #
 # Decision: ship the stock pygbag CDN build. The deployed site has a real,
 # documented runtime dependency on pygame-web.github.io (loader JS, terminal

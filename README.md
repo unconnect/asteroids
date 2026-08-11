@@ -1,7 +1,7 @@
 # Asteroids
 
-A classic Asteroids clone, built with pygame-ce. Playable in the browser or as a
-native desktop binary.
+A classic Asteroids clone, built with pygame. Playable in the browser (via the
+pygame-ce-based pygbag/WASM runtime) or as a native desktop binary.
 
 **Play now: https://asteroids.nikolasreuber.de**
 
@@ -146,12 +146,23 @@ This triggers `.github/workflows/release.yml`, which:
 4. Pokes a Portainer webhook to redeploy the running stack with the new
    image.
 
+The same workflow also runs on every push to `main` and every pull request,
+but only the test suite — the binary/image-building jobs (and the release
+and redeploy steps) stay gated to an actual `v*` tag (or a manual
+`workflow_dispatch` run, see below), so a PR never builds binaries, builds
+or pushes an image, or touches GHCR.
+
 The workflow also supports manual `workflow_dispatch` runs, useful for
-dry-running the pipeline (tests, binary builds, image build/push) without
-tagging. The Portainer webhook step is deliberately skipped on
-`workflow_dispatch` — only an actual tag push can trigger a production
-redeploy, so a manual "Run workflow" click can never accidentally redeploy
-the live site.
+dry-running most of the pipeline (tests, binary builds, image build/push)
+without tagging. Two steps stay tag-only even on a dispatch run: creating
+the GitHub Release itself (`softprops/action-gh-release` needs a real tag to
+name the release after — a branch ref has none, so that job doesn't run on
+dispatch at all) and moving the `latest` image tag that
+`deploy/docker-compose.yml` pins, which is what the Pi actually redeploys
+from. The Portainer webhook step is likewise skipped on `workflow_dispatch`
+— only an actual tag push can move `latest` or trigger a production
+redeploy, so a manual "Run workflow" click, from any branch, can never
+accidentally redeploy the live site.
 
 ### `deploy/`
 
