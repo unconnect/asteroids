@@ -32,10 +32,13 @@ jobs:
         include:
           - os: ubuntu-latest
             artifact: asteroids-linux
+            path: dist/asteroids-linux
           - os: windows-latest
             artifact: asteroids-windows
+            path: dist/asteroids-windows.exe
           - os: macos-latest
             artifact: asteroids-macos
+            path: dist/asteroids-macos.dmg
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -51,6 +54,7 @@ jobs:
 
       - name: Build binary (Windows)
         if: matrix.os == 'windows-latest'
+        shell: bash
         run: |
           uv run pyinstaller --onefile --windowed --name asteroids main.py
           mv dist/asteroids.exe dist/asteroids-windows.exe
@@ -65,11 +69,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: |
-            dist/asteroids-linux
-            dist/asteroids-windows.exe
-            dist/asteroids-macos.dmg
-          if-no-files-found: ignore
+          path: ${{ matrix.path }}
+          if-no-files-found: error
 
   release:
     needs: desktop
