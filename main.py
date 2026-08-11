@@ -1,72 +1,111 @@
+import asyncio
+
 import pygame
-import sys
-from constants import *
-from player import Player
+
 from asteroid import Asteroid
 from asteroidfield import AsteroidField
+from constants import *
+from gamestate import GameState, Phase
+from hud import draw_game_over, draw_hud
+from player import Player
 from shot import Shot
 
-def main():
-    # Init the game
+
+def start_new_game(state, groups):
+    """Clear the world and build a fresh one.
+
+    Used for both first start and restart, so there is exactly one code path
+    that produces a playable game.
+    """
+    for group in groups:
+        group.empty()
+    state.reset()
+    player = Player(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2)
+    AsteroidField(state)
+    return player
+
+
+def handle_collisions(state, player, asteroids, shots):
+    """Resolve shot hits and player impacts for one frame.
+
+    Returns the player, respawned if they were hit and had a life left.
+    """
+    for asteroid in list(asteroids):
+        for shot in list(shots):
+            if shot.collision(asteroid):
+                state.award(asteroid.radius)
+                asteroid.split()
+                shot.kill()
+                break
+
+    if player.is_invulnerable:
+        return player
+
+    for asteroid in list(asteroids):
+        if asteroid.collision(player):
+            if not state.lose_life():
+                player.respawn()
+            break
+    return player
+
+
+async def main():
     pygame.init()
     screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+    pygame.display.set_caption("Asteroids")
 
-    # Game clock
     clock = pygame.time.Clock()
-    # Delta time
     dt = 0
 
-    # Groups
+    font = pygame.font.Font(None, HUD_FONT_SIZE)
+    title_font = pygame.font.Font(None, HUD_TITLE_SIZE)
+
     updatable = pygame.sprite.Group()
     drawable = pygame.sprite.Group()
     asteroids = pygame.sprite.Group()
     shots = pygame.sprite.Group()
+    groups = (updatable, drawable, asteroids, shots)
 
-    # Automatically add all instaces of the classes to groups
+    # Automatically add all instances of the classes to groups
     Player.containers = (updatable, drawable)
     Asteroid.containers = (asteroids, updatable, drawable)
-    AsteroidField.containers = (updatable)
+    AsteroidField.containers = (updatable,)
     Shot.containers = (shots, updatable, drawable)
- 
-    # Create a player and spawn in middle of the screen.
-    player = Player(SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2)
-    asteroidfield = AsteroidField()
 
+    state = GameState()
+    player = start_new_game(state, groups)
 
-    # Start the gameloop
-    while True:
+    running = True
+    while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                return
-        # Fill screen with black
+                running = False
+            elif event.type == pygame.KEYDOWN:
+                if state.phase is Phase.GAME_OVER and event.key == pygame.K_r:
+                    player = start_new_game(state, groups)
+
         screen.fill(SCREEN_COLOR)
 
-        # Update all instaces
-        updatable.update(dt)
+        if state.phase is Phase.PLAYING:
+            updatable.update(dt)
+            player = handle_collisions(state, player, asteroids, shots)
 
-        # Check for asteroid collision with player
-        for asteroid in asteroids:
-            if asteroid.collision(player):
-                print("Game over!")
-                sys.exit()
-            # Check if asteroid was hit by a shot
-            for shot in shots:
-                if shot.collision(asteroid):
-                    asteroid.split()
-                    shot.kill()
+        for drawable_instance in drawable:
+            drawable_instance.draw(screen)
 
-        # Draw all instances
-        for drawable_instace in drawable:
-            drawable_instace.draw(screen)
+        draw_hud(screen, font, state)
+        if state.phase is Phase.GAME_OVER:
+            draw_game_over(screen, title_font, font, state)
 
-        # Decrease players cooldown timer
-        player.cooldown_timer -= dt
-
-        # Update the screen
         pygame.display.flip()
 
-        # Update delta time by seconds 
         dt = clock.tick(60) / 1000
 
-if __name__ == "__main__":
-    main()
+        # Yields to the browser event loop under pygbag. On the desktop this
+        # is a no-op that costs nothing.
+        await asyncio.sleep(0)
+
+    pygame.quit()
+
+
+asyncio.run(main())
