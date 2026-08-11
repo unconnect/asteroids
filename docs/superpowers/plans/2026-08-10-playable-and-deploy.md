@@ -1221,10 +1221,20 @@ Wires everything together. After this task the game is fully playable on the des
 
 **Files:**
 - Modify: `main.py` (full rewrite)
+- Create: `game.py`
+- Create: `tests/test_game.py`
 
 **Interfaces:**
 - Consumes: everything from Tasks 2–7
 - Produces: a runnable game; the async loop shape pygbag requires
+
+> **Amended during execution.** `start_new_game` and `handle_collisions` live in
+> `game.py`, not `main.py`, which imports them. They are display-free, but
+> `asyncio.run(main())` at module level makes `main.py` unimportable, so keeping
+> them there left the project's most integration-heavy logic reachable by no test.
+> `tests/test_game.py` now covers respawn polarity in both directions,
+> one-shot-one-asteroid, pre-split scoring, and the restart teardown. The code
+> block below shows both functions inline for readability; put them in `game.py`.
 
 - [ ] **Step 1: Rewrite `main.py`**
 
@@ -1332,7 +1342,11 @@ async def main():
 
         pygame.display.flip()
 
-        dt = clock.tick(60) / 1000
+        # Cap the step so a browser tab that regains focus after being
+        # throttled cannot deliver one multi-second frame: that would
+        # teleport sprites through each other without a collision test and
+        # burn the whole invulnerability grace in a single decrement.
+        dt = min(clock.tick(60) / 1000, MAX_FRAME_TIME)
 
         # Yields to the browser event loop under pygbag. On the desktop this
         # is a no-op that costs nothing.
