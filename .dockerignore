@@ -1,0 +1,15 @@
+# build/ must NOT be listed here -- it is the payload (build/web is COPYed
+# into the image by docker/Dockerfile). build/web-cache is pygbag's local
+# download cache and is excluded separately below.
+.git
+.github
+.idea
+.venv
+__pycache__/
+dist/
+docs/
+tests/
+*.md
+uv.lock
+conftest.py
+build/web-cache
